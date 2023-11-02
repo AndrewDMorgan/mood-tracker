@@ -79,6 +79,7 @@ dayTyping = [  # 675
     UI.TypingBox((100, 675), (400, 50), color)
 ]
 dayTyping[0].text = board["overview"]["overview"]
+dayTyping[0].charPos = len(dayTyping[0].text)
 dayTyping[0].forceUpdate = True
 
     # entries
@@ -119,6 +120,13 @@ backgroundImage = backgroundImages[0]
 
 # creating an event manager
 events = Events.Manager()
+
+# the selected moods
+selectedMoods = ["mood", "depression", "happiness", "energy", "pain", "socialness", "hopefulness", "activity", "sleep quality"]
+
+# the max number of days that are rendered
+maxPoints = 20  # 5 - 40 so 20
+maxPointsSlider = UI.Slider((475, 5), (250, 40), color, 3/7, "Viewed Days")
 
 # some time related things
 dt = 1/120
@@ -221,6 +229,9 @@ while True:
         # rendering the menu
         for button in statsButton:
             button.Render(screen, events)
+        
+        maxPointsSlider.Render(screen, events)
+        maxPoints = round(maxPointsSlider.slide * 35 + 5)  # 5 - 40
 
         # rendering the stats
         pygame.draw.rect(screen, color.color, [10, 45, 1200-90+35, 750-90], border_radius=4)
@@ -230,34 +241,56 @@ while True:
         
         # generating the points for the graph (maybe cash this stuff but idk)
         points = []
-        colors = {
-            "mood"        : (47 , 79 , 79 ),
-            "stress"      : (127, 0  , 0  ),
-            "anxiety"     : (0  , 100, 0  ),
-            "depression"  : (0  , 0  , 128),
-            "happiness"   : (255, 140, 0  ),
-            "suicidalness": (222, 184, 135),
-            #"fatigue"     : (0  , 255, 0  ),
-            "sleepiness"  : (0  , 191, 255),
-            "energy"      : (0  , 0  , 255),
-            "lovedness"   : (255, 0  , 255),
-            #"pain"        : (255, 255, 84 ),
-            "socialness"  : (221, 160, 221),
-            #"hopefulness" : (255, 20 , 147),
-            "activity"    : (127, 255, 212)
+        colOptions = {
+            "mood"         : (47 , 79 , 79 ),
+            "stress"       : (127, 0  , 0  ),
+            "anxiety"      : (0  , 100, 0  ),
+            "depression"   : (0  , 0  , 128),
+            "happiness"    : (255, 140, 0  ),
+            "suicidalness" : (222, 184, 135),
+            "fatigue"      : (0  , 255, 0  ),
+            "sleepiness"   : (0  , 191, 255),
+            "energy"       : (0  , 0  , 255),
+            "lovedness"    : (255, 0  , 255),
+            "pain"         : (255, 255, 84 ),
+            "socialness"   : (221, 160, 221),
+            "hopefulness"  : (255, 20 , 147),
+            "activity"     : (127, 255, 212),
+            "sleep quality": (255, 255, 255)
         }
 
-        # rendering the moods each color goes with
+        # checking if the moods are being toggled
+        if events.mouseStates["left"] == Events.MouseStates.realeased:
+            if (events.mousePos[0] >= 10 and events.mousePos[0] <= 245 and
+                    events.mousePos[1] >= 50 and events.mousePos[1] <= 15*35+50):  # the 14 is the number of options, the 35 is the option size, and the 50 is the starting pos
+                option = (events.mousePos[1] - 50) // 35
+                mood = [key for key in colOptions][option]
+                if mood in selectedMoods: del selectedMoods[selectedMoods.index(mood)]
+                else: selectedMoods.append(mood)
+        
+        colors = {}
+        for mood in selectedMoods:
+            if mood != "sleep quality": colors[mood] = colOptions[mood]
+
+        # rendering the mood options
         y = 0
-        for mood in colors:
-            UI.DrawText(screen, 30, "pixel2.ttf", f"* {mood}", (15, 50 + y), colors[mood])
+        for mood in colOptions:
+            char = "*"
+            if mood in selectedMoods: char = "o"
+            UI.DrawText(screen, 30, "pixel2.ttf", f"{char} {mood}", (15, 50 + y), colOptions[mood])
             y += 35
         
-        # looping through all the last few days (max 10)
-        maxPoints = 40
+        # looping through all the last few days
+        useDaily = True
+        lastDay = None
+        lastMonth = None
         for i, day in enumerate([key for key in saveData][-maxPoints:]):
+            splitDay = day.split("-")
+            currentDay = int(splitDay[1])
+            currentMonth = splitDay[0]
             # generating the sum of the entries for the day
             average = {key: 0 for key in colors}
+            
             for entry in saveData[day]["entries"]:
                 for mood in colors:
                     average[mood] += entry[mood]
@@ -267,20 +300,43 @@ while True:
             for mood in average:
                 average[mood] = 1 - average[mood]/length
             
+            # accounting for the overall day settings
+            if "mood"        in selectedMoods: average["mood"]       = average["mood"]       * 0.75 + 0.25 * (1 - saveData[day]["overview"]["mood"])
+            if "fatigue"     in selectedMoods: average["fatigue"]    = average["fatigue"]    * 0.75 + 0.25 * (1 - saveData[day]["overview"]["fatigue"])
+            if "socialness"  in selectedMoods: average["socialness"] = average["socialness"] * 0.75 + 0.25 * (1 - saveData[day]["overview"]["socialness"])
+            if "activity"    in selectedMoods: average["activity"]   = average["activity"]   * 0.75 + 0.25 * (1 - saveData[day]["overview"]["activity"])
+
+            # printing the days when there is a skip
+            if not lastDay or lastMonth != currentMonth or currentDay - lastDay > 1:
+                #print("needs a day put here", day)
+                dayTextObj = UI.TextRenderer(20, "pixel2.ttf", day, (0, 0), (50, 50, 65), False)
+                rect = dayTextObj.Update()
+                dayTextSprite = pygame.transform.rotate(dayTextObj.textSurf, 75)
+                xPos = i * 870 / (maxPoints - 1) + 255
+                pygame.draw.line(screen, (0, 0, 15), [xPos-1, 47], [xPos+1, 45+750-90-4])
+                screen.blit(dayTextSprite, [xPos-dayTextSprite.get_width()//2, 50])
+            lastDay = currentDay
+            lastMonth = currentMonth
+
             # adding the point
             for mood in average:
                 points.append([colors[mood], i, average[mood]])
 
+        # rendering the sleep quality
+        if "sleep quality" in selectedMoods:
+            for i, day in enumerate([key for key in saveData][-maxPoints:]):
+                points.append([(255, 255 , 255), i, 1 - saveData[day]["overview"]["sleep quality"]])
+        
         # rendering the graph
         i = 0
         numPoints = len(points)
         for col, x, y in points:
-            pos = (x * 890 / maxPoints + 255, y * 640 + 55)
+            pos = (x * 870 / (maxPoints - 1) + 255, y * 640 + 55)
             pygame.draw.circle(screen, col, pos, 4)
             for i2 in range(i+1, numPoints):
                 nc, nx, ny = points[i2]
                 if nc != col: continue
-                newPos = (nx * 890 / maxPoints + 255, ny * 640 + 55)
+                newPos = (nx * 870 / (maxPoints - 1) + 255, ny * 640 + 55)
                 pygame.draw.line(screen, col, pos, newPos, width=1)
                 break
             i += 1
